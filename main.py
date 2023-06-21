@@ -3,6 +3,7 @@ import json
 import shutil
 import random
 import numpy as np
+import matplotlib.pyplot as plt
 import tensorflow as tf
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)    # TF > 1.12
 #tf.logging.set_verbosity(tf.logging.ERROR)
@@ -38,20 +39,20 @@ reader =  Movielens(version='100K', split_ratio=[0.6, 0.2, 0.2], use_local=True,
 URM_train = reader.get_URM_train(transposed=transposed)
 URM_validation = reader.get_URM_validation(transposed=transposed)
 URM_test = reader.get_URM_test(transposed=transposed)
-
+print(URM_train)
 evaluator = EvaluatorHoldout(URM_test, [5, 20], exclude_seen=True)
 evaluatorValidation = EvaluatorHoldout(URM_validation, [5], exclude_seen=True)
 
-gan = EncoderGANMF(URM_train, mode='user')
+gan = BinGANMF(URM_train, mode='user')
 
-gan.fit(num_factors=10,
-        d_layers=4,
-        d_nodes=32,
+_,epoch_metrics = gan.fit(num_factors=10,
+        d_layers=5,
+        d_nodes=128,
         d_hidden_act='linear',
         d_reg=1e-4,
         g_reg=0,
-        epochs=300,
-        batch_size=128,
+        epochs=500,
+        batch_size=32,
         g_lr=1e-3,
         d_lr=1e-3,
         d_steps=1,
@@ -62,7 +63,26 @@ gan.fit(num_factors=10,
         validation_evaluator=evaluatorValidation,
         sample_every=10,
         validation_set=URM_validation)
+#
+# #print(epoch_metrics)
+def plot_roc_auc_per_epoch(epoch_metrics):
+    epoch_numbers = []
+    roc_auc_values = []
+    i = 1
+    for epoch_dict in epoch_metrics:
+        epoch_number = list(epoch_dict.keys())[0]
+        roc_auc_value = epoch_dict[epoch_number]['RMSE']
+        epoch_numbers.append(i)
+        roc_auc_values.append(roc_auc_value)
+        i = i +1
+    # Plotting the ROC AUC values
+    plt.plot(epoch_numbers, roc_auc_values, marker='o')
+    plt.xlabel('Epoch')
+    plt.ylabel('ROC AUC')
+    plt.title('ROC AUC per Epoch')
+    plt.show()
 
+plot_roc_auc_per_epoch(epoch_metrics)
 if not only_build:
     results_dic, results_run_string = evaluator.evaluateRecommender(gan)
     print(results_run_string)

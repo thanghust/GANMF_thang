@@ -10,8 +10,9 @@ import time
 import tqdm
 import shutil
 import numpy as np
-#import tensorflow.compat.v1 as tf
-import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_eager_execution()
+#import tensorflow as tf
 import keras
 from datetime import datetime
 from Utils import EarlyStoppingScheduler
@@ -48,36 +49,36 @@ class EncoderGANMF(BaseRecommender):
             os.makedirs(codesdir, exist_ok=False)
             shutil.copy(os.path.abspath(sys.modules[self.__module__].__file__), codesdir)
 
-    def build(self, d_layers=1, d_nodes=32, d_hidden_act='sigmoid', num_factors=10):
-        glorot_uniform = tf.compat.v1.glorot_uniform_initializer()
+    def build(self, d_layers=1, d_nodes=32, d_hidden_act='linear', num_factors=10):
+        glorot_uniform = tf.glorot_uniform_initializer()
 
         ##########################
         # DISCRIMINATOR FUNCTION #
         ##########################
         def discriminator(condition, input_data):
-            with tf.compat.v1.variable_scope('discriminator', reuse=tf.compat.v1.AUTO_REUSE):
+            with tf.variable_scope('discriminator', reuse=tf.AUTO_REUSE):
                 d = tf.concat([condition, input_data], axis=1)
                 for l in range(d_layers):
-                    d = tf.compat.v1.layers.dense(d, units=d_nodes, kernel_initializer=glorot_uniform, name='layer_' + str(l),
+                    d = tf.layers.dense(d, units=d_nodes, kernel_initializer=glorot_uniform, name='layer_' + str(l),
                                         activation=d_hidden_act)
                 features = d
-                output =tf.compat.v1.layers.dense(features, units=1, kernel_initializer=glorot_uniform, name='D_output')
+                output =tf.layers.dense(features, units=1, kernel_initializer=glorot_uniform, name='D_output')
             return features, output
         def autoencoder(input_data):
-            with tf.compat.v1.variable_scope('autoencoder', reuse=tf.compat.v1.AUTO_REUSE):
+            with tf.variable_scope('autoencoder', reuse=tf.AUTO_REUSE):
                 emb_dim = 32
-                encoding = tf.compat.v1.layers.dense(input_data, units=emb_dim, kernel_initializer=glorot_uniform, name='encoding')
-                decoding = tf.compat.v1.layers.dense(encoding, units=self.num_items, kernel_initializer=glorot_uniform, name='decoding')
+                encoding = tf.layers.dense(input_data, units=emb_dim, kernel_initializer=glorot_uniform, name='encoding')
+                decoding = tf.layers.dense(encoding, units=self.num_items, kernel_initializer=glorot_uniform, name='decoding')
             #loss = tf.losses.mean_squared_error(input_data, decoding)
             return encoding
         ######################
         # GENERATOR FUNCTION #
         ######################
         def generator(condition):
-            with tf.compat.v1.variable_scope('generator', reuse=tf.compat.v1.AUTO_REUSE):
-                user_embeddings = tf.compat.v1.get_variable(shape=[self.num_users, num_factors], trainable=True,
+            with tf.variable_scope('generator', reuse=tf.AUTO_REUSE):
+                user_embeddings = tf.get_variable(shape=[self.num_users, num_factors], trainable=True,
                                 initializer=glorot_uniform, name='user_embeddings')
-                item_embeddings = tf.compat.v1.get_variable(shape=[self.num_items, num_factors], trainable=True,
+                item_embeddings = tf.get_variable(shape=[self.num_items, num_factors], trainable=True,
                                 initializer=glorot_uniform, name='item_embeddings')
 
             user_lookup = tf.nn.embedding_lookup(user_embeddings, condition)
@@ -95,19 +96,19 @@ class EncoderGANMF(BaseRecommender):
         del self.config['self']
 
         # First clear the session to save GPU memory
-        tf.compat.v1.reset_default_graph()
+        tf.reset_default_graph()
         # Set fixed seed for the TF graph
-        tf.random.set_seed(self.seed)
+        tf.set_random_seed(self.seed)
 
         self.build(num_factors=num_factors, d_layers=d_layers, d_nodes=d_nodes, d_hidden_act=d_hidden_act)
 
         # Create optimizers
-        opt_gen = tf.optimizers.Adam(learning_rate=g_lr)
-        opt_disc = tf.optimizers.Adam(learning_rate=d_lr)
+        opt_gen = tf.train.AdamOptimizer(learning_rate=g_lr)
+        opt_disc = tf.train.AdamOptimizer(learning_rate=d_lr)
 
         # placeholders
-        real_profile = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, self.num_items])
-        self.user_id = tf.compat.v1.placeholder(dtype=tf.int32, shape=[None, 1])
+        real_profile = tf.placeholder(dtype=tf.float32, shape=[None, self.num_items])
+        self.user_id = tf.placeholder(dtype=tf.int32, shape=[None, 1])
         # generator ops
         self.fake_profile = self.generator(self.user_id)
         # autoencoder ops
@@ -124,17 +125,17 @@ class EncoderGANMF(BaseRecommender):
             tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(fake_output), logits=fake_output))
 
         # model parameters
-        self.dvars = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES, scope='discriminator')
-        self.gvars = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES, scope='generator')
+        self.dvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='discriminator')
+        self.gvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='generator')
 
-        with tf.compat.v1.variable_scope('dvars_best', reuse=tf.compat.v1.AUTO_REUSE):
+        with tf.variable_scope('dvars_best', reuse=tf.AUTO_REUSE):
             self.dvars_best = []
             for idx, var in enumerate(self.dvars):
-                self.dvars_best.append(tf.compat.v1.get_variable('dva_r' + str(idx), shape=var.get_shape(), trainable=False))
-        with tf.compat.v1.variable_scope('gvars_best', reuse=tf.compat.v1.AUTO_REUSE):
+                self.dvars_best.append(tf.get_variable('dva_r' + str(idx), shape=var.get_shape(), trainable=False))
+        with tf.variable_scope('gvars_best', reuse=tf.AUTO_REUSE):
             self.gvars_best = []
             for idx, var in enumerate(self.gvars):
-                self.gvars_best.append(tf.compat.v1.get_variable('gvar_' + str(idx), shape=var.get_shape(), trainable=False))
+                self.gvars_best.append(tf.get_variable('gvar_' + str(idx), shape=var.get_shape(), trainable=False))
 
         # losses
         dloss = loss_real + loss_fake + \
@@ -144,8 +145,8 @@ class EncoderGANMF(BaseRecommender):
                 g_reg * tf.add_n([tf.nn.l2_loss(var) for var in self.gvars])
 
         # update ops
-        dtrain = opt_disc.minimize(dloss, var_list=self.dvars,tape=tf.GradientTape(persistent=True))
-        gtrain = opt_gen.minimize(gloss, var_list=self.gvars,tape=tf.GradientTape(persistent=True))
+        dtrain = opt_disc.minimize(dloss, var_list=self.dvars)
+        gtrain = opt_gen.minimize(gloss, var_list=self.gvars)
 
         ##################
         # START TRAINING #
@@ -173,7 +174,7 @@ class EncoderGANMF(BaseRecommender):
         epoch = 1
 
         pbar = tqdm.tqdm(total=epochs, initial=1)
-
+        epoch_metrics = []
         while not self._stop_training and epoch < epochs + 1:
             batch_d_loss = []
             batch_g_loss = []
@@ -218,9 +219,10 @@ class EncoderGANMF(BaseRecommender):
                 print('Epoch : {:d}. Total: {:.2f} secs, {:.2f} secs/epoch.'.format(epoch, total, total/sample_every))
                 if self.mode == 'item':
                     self.URM_train = self.URM_train.T.tocsr()
-                _, results_run_string = validation_evaluator.evaluateRecommender(self)
+                results_dict, results_run_string = validation_evaluator.evaluateRecommender(self)
                 if self.mode == 'item':
                     self.URM_train = self.URM_train.T.tocsr()
+                epoch_metrics.append(results_dict)
                 print(results_run_string)
                 e_start = time.time()
 
@@ -245,7 +247,7 @@ class EncoderGANMF(BaseRecommender):
         if self.mode == 'item':
             self.URM_train = self.URM_train.T.tocsr()
 
-        return epoch
+        return epoch,epoch_metrics
 
     def stop_fit(self):
         self._stop_training = True

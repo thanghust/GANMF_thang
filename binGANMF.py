@@ -10,7 +10,9 @@ import time
 import tqdm
 import shutil
 import numpy as np
+import matplotlib.pyplot as plt
 import tensorflow.compat.v1 as tf
+import tensorflow as tf1
 from datetime import datetime
 from Utils import EarlyStoppingScheduler
 from Base.BaseRecommender import BaseRecommender
@@ -25,18 +27,21 @@ class BinGANMF(BaseRecommender):
             raise ValueError('Accepted training modes are `user` and `item`. Given was {}.', mode)
 
         self.mode = mode
+        # If the mode is 'item', transpose the URM_train matrix to switch the role of users and items
         if self.mode == 'item':
             self.URM_train = URM_train.T.tocsr()
         else:
             self.URM_train = URM_train
+        # Get the number of users and items in the URM_train matrix
         self.num_users, self.num_items = self.URM_train.shape
         self.config = None
         self.seed = seed
         self.verbose = verbose
+        # Define the directory path for storing logs and results
         self.logsdir = os.path.join('plots', self.RECOMMENDER_NAME, datetime.now().strftime("%Y%m%d-%H%M%S"))
 
         self.is_experiment = is_experiment
-
+        # Create the logs directory if it doesn't exist (except in experiment mode)
         if not os.path.exists(self.logsdir) and not self.is_experiment:
             os.makedirs(self.logsdir, exist_ok=False)
 
@@ -46,7 +51,7 @@ class BinGANMF(BaseRecommender):
             os.makedirs(codesdir, exist_ok=False)
             shutil.copy(os.path.abspath(sys.modules[self.__module__].__file__), codesdir)
 
-    def build(self, d_layers=1, d_nodes=32, d_hidden_act='sigmoid', num_factors=10):
+    def build(self, d_layers=1, d_nodes=32, d_hidden_act='linear', num_factors=10):
         glorot_uniform = tf.compat.v1.glorot_uniform_initializer()
 
         ##########################
@@ -58,6 +63,8 @@ class BinGANMF(BaseRecommender):
                 for l in range(d_layers):
                     d = tf.layers.dense(d, units=d_nodes, kernel_initializer=glorot_uniform, name='layer_' + str(l),
                                         activation=d_hidden_act)
+                    d = tf.layers.dropout(d, rate=0.4)
+                #d = tf.layers.dropout(d, rate=0.4)
                 features = d
                 output = tf.layers.dense(features, units=1, kernel_initializer=glorot_uniform, name='D_output')
             return features, output
@@ -72,7 +79,13 @@ class BinGANMF(BaseRecommender):
                 item_embeddings = tf.get_variable(shape=[self.num_items, num_factors], trainable=True,
                                 initializer=glorot_uniform, name='item_embeddings')
 
-            user_lookup = tf.nn.embedding_lookup(user_embeddings, condition)
+            # user_lookup = tf.nn.embedding_lookup(user_embeddings, condition)
+            # fake_data = tf.matmul(tf.squeeze(user_lookup, axis=1), item_embeddings, transpose_b=True)
+            encoding = tf.layers.dense(user_embeddings, units=32, kernel_initializer=glorot_uniform,activation=d_hidden_act,
+                                       name='encoding')
+            decoding = tf.layers.dense(encoding, units=num_factors, kernel_initializer=glorot_uniform,activation=d_hidden_act,
+                                       name='decoding')
+            user_lookup = tf.nn.embedding_lookup(decoding, condition)
             fake_data = tf.matmul(tf.squeeze(user_lookup, axis=1), item_embeddings, transpose_b=True)
             return fake_data
 
@@ -101,6 +114,9 @@ class BinGANMF(BaseRecommender):
         real_profile = tf.compat.v1.placeholder(dtype=tf.float32, shape=[None, self.num_items])
         self.user_id = tf.compat.v1.placeholder(dtype=tf.int32, shape=[None, 1])
 
+
+
+
         # generator ops
         self.fake_profile = self.generator(self.user_id)
 
@@ -108,13 +124,14 @@ class BinGANMF(BaseRecommender):
         real_features, real_output = self.discriminator(tf.cast(self.user_id, tf.float32), real_profile)
         fake_features, fake_output = self.discriminator(tf.cast(self.user_id, tf.float32), self.fake_profile)
 
-        # discriminator losses
+        # # discriminator losses
         loss_real = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(real_output), logits=real_output))
         loss_fake = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(fake_output), logits=fake_output))
 
         # model parameters
+        #collects the trainable variables within the discriminator scope and stores them in dvars and gvars.
         self.dvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='discriminator')
         self.gvars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='generator')
 
@@ -130,7 +147,7 @@ class BinGANMF(BaseRecommender):
         # losses
         dloss = loss_real + loss_fake + \
                 d_reg * tf.add_n([tf.nn.l2_loss(var) for var in self.dvars])
-        gloss = loss_fake + \
+        gloss = loss_fake + recon_coefficient * tf.losses.mean_squared_error(self.fake_profile, real_profile)+ \
                 recon_coefficient * tf.losses.mean_squared_error(real_features, fake_features) + \
                 g_reg * tf.add_n([tf.nn.l2_loss(var) for var in self.gvars])
 
@@ -164,7 +181,7 @@ class BinGANMF(BaseRecommender):
         epoch = 1
 
         pbar = tqdm.tqdm(total=epochs, initial=1)
-
+        epoch_metrics = []
         while not self._stop_training and epoch < epochs + 1:
             batch_d_loss = []
             batch_g_loss = []
@@ -209,10 +226,11 @@ class BinGANMF(BaseRecommender):
                 print('Epoch : {:d}. Total: {:.2f} secs, {:.2f} secs/epoch.'.format(epoch, total, total/sample_every))
                 if self.mode == 'item':
                     self.URM_train = self.URM_train.T.tocsr()
-                _, results_run_string = validation_evaluator.evaluateRecommender(self)
+                results_dict, results_run_string = validation_evaluator.evaluateRecommender(self)
                 if self.mode == 'item':
                     self.URM_train = self.URM_train.T.tocsr()
-                print(results_run_string)
+                epoch_metrics.append(results_dict)
+                print(results_dict) #
                 e_start = time.time()
 
             if validation_evaluator is not None:
@@ -228,7 +246,6 @@ class BinGANMF(BaseRecommender):
             epoch += 1
             pbar.update()
         pbar.close()
-
         t_end = time.time()
         if self.verbose:
             print('Training took {:.2f} seconds'.format(t_end - t_start))
@@ -236,8 +253,18 @@ class BinGANMF(BaseRecommender):
         if self.mode == 'item':
             self.URM_train = self.URM_train.T.tocsr()
 
-        return epoch
+        return epoch,epoch_metrics
 
+    # def plot_metric_chart(epoch_metrics, metric_name):
+    #     epochs = range(1, len(epoch_metrics) + 1)
+    #     metric_values = [metrics[metric_name] for metrics in epoch_metrics]
+    #
+    #     plt.plot(epochs, metric_values, marker='o')
+    #     plt.xlabel('Epoch')
+    #     plt.ylabel(metric_name)
+    #     plt.title(f'{metric_name} over Epochs')
+    #     plt.grid(True)
+    #     plt.show()
     def stop_fit(self):
         self._stop_training = True
 
