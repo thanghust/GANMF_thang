@@ -12,12 +12,10 @@ GAN-MF consists of two main components: the generator and the discriminator. The
     seaborn==0.9.0
     tensorflow==2.12.0
     tqdm==4.31.1
-### Usage
-  Clone this repository.
-  Install the required dependencies using pip install -r requirements.txt.
-  Prepare your user-item interaction data in a matrix format, where rows represent users and columns represent items. You can preprocess the data and convert it to a dense or sparse matrix format depending on the size of your dataset.
-  Modify the hyperparameters in the config.py file according to your dataset and preferences. You can adjust the learning rate, number of epochs, batch size, number of hidden layers, and more.
-  Run the train.py script to start training the GAN-MF model on your dataset.
+### Usage:
+    Clone this repository.
+    Install the required dependencies using pip install -r requirements.txt.
+    Run the main.py script to start training the GAN-MF model on the dataset.
 
 ## References
 Original GAN Paper
