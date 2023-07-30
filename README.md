@@ -15,10 +15,10 @@ GAN-MF consists of two main components: the generator and the discriminator. The
 ### Usage:
     Clone this repository.
     Install the required dependencies using pip install -r requirements.txt.
-    Run the main.py script to start training the GAN-MF model on the dataset.
+    Run the main.py script to start training the GAN-MF model on the dataset and change the config in file main.py if you like to see others results
+    The GANMF.py is the GANMF model with using Autoencoders for generator and the GAN_not_autoencoders.py is GANMF model without using Autoencoders. Change the code in line 46 to run each models
 
-## References
-Original GAN Paper
+### If you want to read my full project, just read the pdf file. Peace!
 Collaborative Filtering with Generative Adversarial Networks
 Contributing
 If you find any bugs or have suggestions for improvement, feel free to open an issue or submit a pull request.
