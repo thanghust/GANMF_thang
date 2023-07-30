@@ -19,9 +19,5 @@ GAN-MF consists of two main components: the generator and the discriminator. The
     The GANMF.py is the GANMF model with using Autoencoders for generator and the GAN_not_autoencoders.py is GANMF model without using Autoencoders. Change the code in line 46 to run each models
 
 ### If you want to read my full project, just read the pdf file. Peace!
-Collaborative Filtering with Generative Adversarial Networks
-Contributing
-If you find any bugs or have suggestions for improvement, feel free to open an issue or submit a pull request.
 
-License
-This project is licensed under the MIT License - see the LICENSE file for details.
+
